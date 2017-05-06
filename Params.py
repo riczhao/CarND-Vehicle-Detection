@@ -101,5 +101,29 @@ def get_best_hog():
                             best = (color_space, orient, pix_per_cell, cell_per_block, hog_channel)
     print('maxscore ', max_score)
     print(best)
-get_best_hist()
-get_best_hog()
+    
+def get_windows():
+    wins = [
+        (450,135, 1), # (bottom, w, overlap)
+        (437,963-896,1),
+        ]
+    bboxes = []
+    for win in wins:
+        line = []
+        step = int(win[1]*win[2])
+        step = 5 if step < 5 else step
+        for x in range(0,1280,step):
+            line.append(((x,win[0]-win[1]//2),(x+win[1],win[0]+win[1]//2)))
+        bboxes.append(line)
+    return bboxes
+
+import glob
+test_imgs = glob.glob("test_images/*.jpg") 
+wins = get_windows()
+for fn in test_imgs:
+    img = mpimg.imread(fn)#/255
+    for line in wins:
+        drawn = draw_boxes(img, line, thick=3)
+        plt.imshow(drawn)
+#get_best_hist()
+#get_best_hog()
