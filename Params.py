@@ -106,6 +106,7 @@ def get_windows():
     wins = [
         (450,135, 1), # (bottom, w, overlap)
         (437,963-896,1),
+        (417,793-775,1),
         ]
     bboxes = []
     for win in wins:
@@ -119,11 +120,34 @@ def get_windows():
 
 import glob
 test_imgs = glob.glob("test_images/*.jpg") 
-wins = get_windows()
-for fn in test_imgs:
-    img = mpimg.imread(fn)#/255
+def draw_wins(img):
+    wins = get_windows()
     for line in wins:
         drawn = draw_boxes(img, line, thick=3)
         plt.imshow(drawn)
+
+from moviepy.editor import VideoFileClip
+def processImage(img):
+    image = np.copy(img)
+    draw_wins(img)
+    '''
+    image = image.astype(np.float32)/255
+    frame = OneFrame(clf,image)
+    hot_windows = frame.detect_cars()
+    wins,heatmap = frame.merge_wins(hot_windows)
+    img = draw_boxes(img, frame.wins_to_detect, color=(0, 255, 0), thick=1)
+    img = draw_boxes(img, hot_windows, color=(0, 0, 255), thick=1)
+    img = draw_boxes(img, wins, color=(255, 0, 0), thick=2)
+    '''
+ 
+    return img
+def markVideo(fn):
+    white_output = 'mark_'+fn
+    clip1 = VideoFileClip(fn)
+    white_clip = clip1.fl_image(processImage)
+    white_clip.write_videofile(white_output, audio=False)
+
+#markVideo('test_video.mp4')
+markVideo('project_video.mp4')
 #get_best_hist()
 #get_best_hog()

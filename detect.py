@@ -91,10 +91,24 @@ class Classifier:
         else: feature_image = np.copy(img)      
         return feature_image
  
+    def get_hog_from_img(self,img):
+        if self.hog_channel == 'ALL':
+            hog_features = []
+            for channel in range(img.shape[2]):
+                hog_img = get_hog_features(img[:,:,channel], 
+                                    self.orient, self.pix_per_cell, self.cell_per_block, 
+                                    vis=False, feature_vec=False)
+                hog_features.append(hog_img)
+        else:
+            hog_img = get_hog_features(img[:,:,hog_channel], self.orient, 
+                        self.pix_per_cell, self.cell_per_block, vis=False, feature_vec=Fale)
+            hog_features.applend(hog_img)
+        return np.array(hog_features)
+ 
         # Define a function to extract features from a single image window
         # This function is very similar to extract_features()
         # just for a single image rather than list of images
-    def single_img_features(self, img):    
+    def single_img_features(self, img,hog=hog):
         #1) Define an empty list to receive features
         img_features = []
         #2) Apply color conversion if other than 'RGB'
@@ -111,26 +125,36 @@ class Classifier:
             img_features.append(hist_features)
         #7) Compute HOG features if flag is set
         if self.hog_feat == True:
-            if self.hog_channel == 'ALL':
-                hog_features = []
-                for channel in range(feature_image.shape[2]):
-                    hog_features.extend(get_hog_features(feature_image[:,:,channel], 
+            if hog is None:
+                if self.hog_channel == 'ALL':
+                    hog_features = []
+                    for channel in range(feature_image.shape[2]):
+                        hog_features.extend(get_hog_features(feature_image[:,:,channel], 
                                     self.orient, self.pix_per_cell, self.cell_per_block, 
                                     vis=False, feature_vec=True))      
-            else:
-                hog_features = get_hog_features(feature_image[:,:,hog_channel], self.orient, 
+                else:
+                    hog_features = get_hog_features(feature_image[:,:,hog_channel], self.orient, 
                         self.pix_per_cell, self.cell_per_block, vis=False, feature_vec=True)
-            #8) Append features to list
-            img_features.append(hog_features)
+                #8) Append features to list
+                img_features.append(hog_features)
+            else:
+                img_features.append(hog)
 
         #9) Return concatenated array of features
         return np.concatenate(img_features)
 
-    def predict(self, img): # img after color convert
-        features = self.single_img_features(img)
+    def predict(self, img, hog=None): # img after color convert
+        t1 = time.time()
+        features = self.single_img_features(img,hog=hog)
+        t2 = time.time()
         test_features = self.X_scaler.transform(np.array(features).reshape(1, -1))
+        t3 = time.time()
         #6) Predict using your classifier
-        return self.svc.predict(test_features)
+        prediction = self.svc.predict(test_features)
+        t4 = time.time()
+        #print('get feature:',t2-t1,' scale:',t3-t2,' predict:',t4-t3)
+        return prediction
+
 
 class OneFrame:
     def __init__(self,clf,img):
@@ -138,12 +162,26 @@ class OneFrame:
         self.img = img
         p = [2.99187838, -1256.71178676]
         self.wins = [
+            #{'w':, 'x_range":(x_start, x_end), 'y_range':(y_start,y_end),'step':(x_step,y_step)}
+            {
+                'w': 135,
+                'x_range': (558,1280),
+                'y_range': (350,656),
+                'step': (0.1, 0.2),
+            },
+            {
+                'w': 91,
+                'x_range': (558,1280),
+                'y_range': (350,530),
+                'step': (0.1, 0.1),
+            },
             #(550,135, 0.1), # (y, w, overlap)
             #(450,135, 0.1), # (y, w, overlap)
             #(437,963-896,0.1),
             #(420,794-777,0.1),
-            (y,int((y*p[0]+p[1])*0.6),0.2) for y in [538,497,466,450,436,424]
+            #(y,int((y*p[0]+p[1])*0.6),0.2) for y in [538,497,466,450,436,424]
             ]
+        self.detected_windows = []
     def get_windows(self):
         bboxes = []
         for win in self.wins:
@@ -152,6 +190,54 @@ class OneFrame:
             for x in range(0,1280,step):
                 bboxes.append(((x,win[0]-int(win[1])),(x+win[1],win[0])))
         return bboxes
+    def scaleToClf(self, img, win_cfg):
+        x1 = win_cfg['x_range'][0]
+        x2 = win_cfg['x_range'][1]
+        y1 = win_cfg['y_range'][0]
+        y2 = win_cfg['y_range'][1]
+        win = img[y1:y2,x1:x2,:]
+        scale = 64/win_cfg['w']
+        win = cv2.resize(win, (0,0), fx=scale, fy=scale)
+        return win,scale
+    def getHogByXY(self,hog_img,left,top,w_block):
+        w = hog_img[:,top:top+w_block,left:left+w_block]
+        return w.ravel()
+    
+    def detect_car_fast(self):
+        img = self.clf.color_convert(self.img)
+        on_windows = []
+        for win_cfg in self.wins:
+            scaled_img,scale = self.scaleToClf(img, win_cfg)
+            hog_img = self.clf.get_hog_from_img(scaled_img)
+            w = win_cfg['w']
+            w_block = w*scale/self.clf.pix_per_cell
+            step_block_x = round(win_cfg['step'][0]*w_block)
+            step_block_x = step_block_x if step_block_x >= 1 else 1
+            step_block_y = round(win_cfg['step'][1]*w_block)
+            step_block_y = step_block_y if step_block_y >= 1 else 1
+            w_block = round(w_block) - 1
+            y_wins_block = list(range(0, hog_img.shape[1]-w_block+1,step_block_y))
+            if y_wins_block[-1] < hog_img.shape[1]-w_block:
+                y_wins_block.append(hog_img.shape[1]-w_block)
+            x_wins_block = list(range(0, hog_img.shape[2]-w_block+1, step_block_x))
+            if x_wins_block[-1] < hog_img.shape[2]-w_block:
+                x_wins_block.append(hog_img.shape[2]-w_block)
+            for top in y_wins_block:
+                for left in x_wins_block:
+                    hog_features = self.getHogByXY(hog_img, left, top, w_block)
+                    scaled_x = left * self.clf.pix_per_cell
+                    scaled_y = top * self.clf.pix_per_cell
+                    win = scaled_img[scaled_y:scaled_y+64,scaled_x:scaled_x+64]
+                    predict = self.clf.predict(win,hog=hog_features)
+                    x = round(scaled_x/scale) + win_cfg['x_range'][0]
+                    y = round(scaled_y/scale) + win_cfg['y_range'][0]
+                    w = round(64/scale)
+                    detected_win = ((x,y), (x+w,y+w))
+                    self.detected_windows.append(detected_win)
+                    if predict:
+                        on_windows.append(detected_win)
+        return on_windows
+
     def detect_cars(self):
         wins = self.get_windows()
         self.wins_to_detect = wins
@@ -169,12 +255,36 @@ class OneFrame:
                 on_windows.append(window)
         #8) Return windows for positive detections
         return on_windows
+    last_wins_map = []
+    two_win_count = 0
+    def win_filter(self,bboxes):
+        if len(bboxes) >1:
+            OneFrame.two_win_count += 1
+        else:
+            if OneFrame.two_win_count:
+                print(OneFrame.two_win_count)
+            OneFrame.two_win_count = 0;
+        map = np.zeros(self.img.shape[0:2])
+        total = map.copy()
+        for box in bboxes:
+            map[box[0][1]:box[1][1],box[0][0]:box[1][0]] = 1
+        for m in OneFrame.last_wins_map:
+            total += m
+        output_bboxes = []
+        for box in bboxes:
+            weight = total[box[0][1]:box[1][1],box[0][0]:box[1][0]]
+            if len(OneFrame.last_wins_map)<10 or weight.mean()/len(OneFrame.last_wins_map) > 0.3:
+                output_bboxes.append(box)
+        OneFrame.last_wins_map.append(map)
+        if len(OneFrame.last_wins_map) > 10:
+            OneFrame.last_wins_map.pop(0)
+        return output_bboxes
     def merge_wins(self, wins):
         heatmap = np.zeros_like(self.img[:,:,0]).astype(np.float)
         for win in wins:
             heatmap[win[0][1]:win[1][1],win[0][0]:win[1][0]] += 1
         orig_heatmap = heatmap.copy()
-        heatmap[heatmap < 3] = 0.
+        heatmap[heatmap < 7] = 0.
         labels = label(heatmap)
         bboxes = []
         for i in range(1,labels[1]+1):
@@ -183,6 +293,7 @@ class OneFrame:
             xs = nonzero[1]
             bbox = ((xs.min(),ys.min()),(xs.max(),ys.max()))
             bboxes.append(bbox)
+        bboxes = self.win_filter(bboxes)
         return bboxes, orig_heatmap
 if not os.path.isfile('clf.p'):
     clf = Classifier()
@@ -301,33 +412,34 @@ t=time.time()
 
 #windows = slide_window(image, x_start_stop=[None, None], y_start_stop=y_start_stop, 
 #                    xy_window=(96, 96), xy_overlap=(0.5, 0.5))
-'''
-test_imgs = glob.glob("test_images/*.jpg") 
-for fn in test_imgs:
-    image = mpimg.imread(fn)
-    t1 = time.time()
-    image = image.astype(np.float32)/255
-    frame = OneFrame(clf,image)
-    print('frame time:',time.time()-t1)
-    hot_windows = frame.detect_cars()
-    wins,heatmap = frame.merge_wins(hot_windows)
-    image = draw_boxes(image, hot_windows, color=(0., 0., 1.,0.5), thick=2)                    
-    image = draw_boxes(image, wins, color=(1., 0., 0.,0.5), thick=2)                    
-    plt.subplot(2,1,1)
-    plt.imshow(image)
-    plt.subplot(2,1,2)
-    plt.imshow(heatmap)
-print('end')
-'''
+def test_images():
+    test_imgs = glob.glob("test_images/*.jpg") 
+    for fn in test_imgs:
+        image = mpimg.imread(fn)
+        t1 = time.time()
+        image = image.astype(np.float32)/255
+        frame = OneFrame(clf,image)
+        hot_windows = frame.detect_car_fast()
+        wins,heatmap = frame.merge_wins(hot_windows)
+        print('frame time:',time.time()-t1)
+        image = draw_boxes(image, frame.detected_windows, color=(0., 1., 0.), thick=1)                    
+        image = draw_boxes(image, hot_windows, color=(0., 0., 1.), thick=1)                    
+        image = draw_boxes(image, wins, color=(1., 0., 0.), thick=2)                    
+        plt.subplot(2,1,1)
+        plt.imshow(image)
+        plt.subplot(2,1,2)
+        plt.imshow(heatmap)
+        print('end')
+
 from moviepy.editor import VideoFileClip
 def processImage(img):
     image = np.copy(img)
     image = image.astype(np.float32)/255
     frame = OneFrame(clf,image)
-    hot_windows = frame.detect_cars()
+    hot_windows = frame.detect_car_fast()
     wins,heatmap = frame.merge_wins(hot_windows)
-    img = draw_boxes(img, frame.wins_to_detect, color=(0, 255, 0), thick=1)
-    img = draw_boxes(img, hot_windows, color=(0, 0, 255), thick=1)
+    #img = draw_boxes(img, frame.detected_windows, color=(0, 255, 0), thick=1)
+    #img = draw_boxes(img, hot_windows, color=(0, 0, 255), thick=1)
     img = draw_boxes(img, wins, color=(255, 0, 0), thick=2)
  
     return img
@@ -338,6 +450,7 @@ def markVideo(fn):
     white_clip.write_videofile(white_output, audio=False)
 
 if __name__ == '__main__':
-    markVideo('test_video.mp4')
-    #markVideo('project_video.mp4')
+    #markVideo('test_video.mp4')
+    markVideo('project_video.mp4')
+    #markVideo('c.mp4')
     pass
