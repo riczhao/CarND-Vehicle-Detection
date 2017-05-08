@@ -165,13 +165,13 @@ class OneFrame:
             #{'w':, 'x_range":(x_start, x_end), 'y_range':(y_start,y_end),'step':(x_step,y_step)}
             {
                 'w': 135,
-                'x_range': (558,1280),
+                'x_range': (0,1280),
                 'y_range': (350,656),
                 'step': (0.1, 0.2),
             },
             {
                 'w': 91,
-                'x_range': (558,1280),
+                'x_range': (0,1280),
                 'y_range': (350,530),
                 'step': (0.1, 0.1),
             },
@@ -284,7 +284,7 @@ class OneFrame:
         for win in wins:
             heatmap[win[0][1]:win[1][1],win[0][0]:win[1][0]] += 1
         orig_heatmap = heatmap.copy()
-        heatmap[heatmap < 7] = 0.
+        heatmap[heatmap < 9] = 0.
         labels = label(heatmap)
         bboxes = []
         for i in range(1,labels[1]+1):
@@ -422,9 +422,9 @@ def test_images():
         hot_windows = frame.detect_car_fast()
         wins,heatmap = frame.merge_wins(hot_windows)
         print('frame time:',time.time()-t1)
-        image = draw_boxes(image, frame.detected_windows, color=(0., 1., 0.), thick=1)                    
+        #image = draw_boxes(image, frame.detected_windows, color=(0., 1., 0.), thick=1)                    
         image = draw_boxes(image, hot_windows, color=(0., 0., 1.), thick=1)                    
-        image = draw_boxes(image, wins, color=(1., 0., 0.), thick=2)                    
+        #image = draw_boxes(image, wins, color=(1., 0., 0.), thick=2)                    
         plt.subplot(2,1,1)
         plt.imshow(image)
         plt.subplot(2,1,2)
@@ -451,6 +451,7 @@ def markVideo(fn):
 
 if __name__ == '__main__':
     #markVideo('test_video.mp4')
-    markVideo('project_video.mp4')
+    #markVideo('project_video.mp4')
     #markVideo('c.mp4')
+    test_images()
     pass

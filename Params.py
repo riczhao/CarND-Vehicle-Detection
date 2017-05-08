@@ -147,7 +147,31 @@ def markVideo(fn):
     white_clip = clip1.fl_image(processImage)
     white_clip.write_videofile(white_output, audio=False)
 
+def tune_hog_images():
+    cars = glob.glob('vehicles/*/*')
+    notcars = glob.glob('non-vehicles/*/*')
+    import random
+    car_idx = random.randrange(len(cars))
+    notcar_idx = random.randrange(len(notcars))
+    car_img = mpimg.imread(cars[car_idx])/255
+    notcar_img = mpimg.imread(notcars[notcar_idx])/255
+    car_y = cv2.cvtColor(car_img, cv2.COLOR_RGB2YCrCb)
+    notcar_y = cv2.cvtColor(notcar_img, cv2.COLOR_RGB2YCrCb)
+    for ch in range(3):
+        plt.subplot(3,4,ch*4+1)
+        plt.imshow(car_y[:,:,ch],cmap='gray')
+        _,hog = get_hog_features(car_y[:,:,ch], 8, 8, 2,vis=True, feature_vec=True)
+        plt.subplot(3,4,ch*4+2)
+        plt.imshow(hog,cmap='gray')
+        plt.subplot(3,4,ch*4+3)
+        plt.imshow(notcar_y[:,:,ch],cmap='gray')
+        _,hog = get_hog_features(notcar_y[:,:,ch], 8, 8, 2,vis=True, feature_vec=True)
+        plt.subplot(3,4,ch*4+4)
+        plt.imshow(hog,cmap='gray')
+    plt.show()
+
+tune_hog_images()
 #markVideo('test_video.mp4')
-markVideo('project_video.mp4')
+#markVideo('project_video.mp4')
 #get_best_hist()
 #get_best_hog()
